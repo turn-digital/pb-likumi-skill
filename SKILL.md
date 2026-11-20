@@ -1,11 +1,11 @@
 ---
-name: likumi-lv
+name: pb-likumi
 description: Latvijas tiesību aktu (likumi.lv, ~126 000 akti) lokāla meklēšana, lasīšana un korektas atsauces ar saitēm uz likumi.lv. Lieto vienmēr, kad jāatrod, kurš Latvijas likums, Ministru kabineta noteikumi vai cits akts kaut ko nosaka, jānoskaidro iestādei vai tēmai saistošie akti, jāpārbauda panta teksts, grozījumi, spēkā esamība vai aktu savstarpējās sakarības, vai jāuzraksta atsauce uz pantu. Use for any question about Latvian law, legislation, regulations (Saeima, Ministru kabinets, pašvaldību saistošie noteikumi) or citations to likumi.lv.
 ---
 
 # likumi.lv: Latvijas tiesību aktu meklēšana un atsauces
 
-Šajā mapē ir visi likumi.lv publicētie tiesību akti parsētā veidā (`data/likumi-lv.db`, SQLite ar pilnteksta indeksu)
+Šajā mapē ir visi likumi.lv publicētie tiesību akti parsētā veidā (`data/pb-likumi.db`, SQLite ar pilnteksta indeksu)
 un rīks `scripts/likumi.py`. Rīks tikai lasa, izvade ir JSON, vajadzīgs tikai Python 3.9+ (bez papildu pakotnēm,
 bez interneta).
 

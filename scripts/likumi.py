@@ -35,11 +35,11 @@ SAKNE = Path(__file__).resolve().parent.parent
 
 
 def _db_cels() -> Path:
-    """1) LIKUMI_DB; 2) prasmes pašas data/likumi-lv.db (ielādēta publiskā DB);
+    """1) LIKUMI_DB; 2) prasmes pašas data/pb-likumi.db (ielādēta publiskā DB);
     3) ja prasme ir apakšmodulis datu izgūšanas repozitorijā: tā darba DB."""
     if os.environ.get("LIKUMI_DB"):
         return Path(os.environ["LIKUMI_DB"])
-    sava = SAKNE / "data" / "likumi-lv.db"
+    sava = SAKNE / "data" / "pb-likumi.db"
     izgusanas = SAKNE.parent / "data" / "work" / "likumi.db"
     return izgusanas if (not sava.exists() and izgusanas.exists()) else sava
 
