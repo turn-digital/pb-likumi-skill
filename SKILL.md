@@ -5,14 +5,14 @@ description: Latvijas tiesību aktu (likumi.lv, ~126 000 akti) lokāla meklēša
 
 # likumi.lv: Latvijas tiesību aktu meklēšana un atsauces
 
-Šajā mapē ir visi likumi.lv publicētie tiesību akti parsētā veidā (`dati/likumi.db`, SQLite ar pilnteksta indeksu)
-un rīks `skripti/likumi.py`. Rīks tikai lasa, izvade ir JSON, vajadzīgs tikai Python 3.9+ (bez papildu pakotnēm,
+Šajā mapē ir visi likumi.lv publicētie tiesību akti parsētā veidā (`data/likumi.db`, SQLite ar pilnteksta indeksu)
+un rīks `scripts/likumi.py`. Rīks tikai lasa, izvade ir JSON, vajadzīgs tikai Python 3.9+ (bez papildu pakotnēm,
 bez interneta).
 
 Visas komandas palaid no šīs mapes (tās, kurā atrodas šis fails):
 
 ```bash
-python3 skripti/likumi.py <komanda> ...
+python3 scripts/likumi.py <komanda> ...
 ```
 
 Ja datubāze atrodas citur, norādi to ar vides mainīgo `LIKUMI_DB=/ceļš/likumi.db`.
@@ -20,7 +20,7 @@ Ja datubāze atrodas citur, norādi to ar vides mainīgo `LIKUMI_DB=/ceļš/liku
 ## Ātrākais ceļš: jautājums -> normas ar atsaucēm
 
 ```bash
-python3 skripti/likumi.py konteksts "darba devēja uzteikuma termiņš"
+python3 scripts/likumi.py konteksts "darba devēja uzteikuma termiņš"
 ```
 
 Atgriež atbilstošākos pantus un punktus ar pilnu tekstu, gatavu atsauci (`atsauce`), saiti (`url`) un Markdown saiti
@@ -38,10 +38,10 @@ attiecas uz jautājumu.
 ## Pilnā darba gaita
 
 ```bash
-python3 skripti/likumi.py meklet "piekļūstamība tīmekļvietne"      # 1. atrodi aktus
-python3 skripti/likumi.py akts 316109                               # 2. pase, saturs, sakarību skaits
-python3 skripti/likumi.py teksts 316109#n4                          # 3. izlasi normu (ar lokatoriem)
-python3 skripti/likumi.py atsauce 316109#p56/56.3                   # 4. gatava atsauce + saite
+python3 scripts/likumi.py meklet "piekļūstamība tīmekļvietne"      # 1. atrodi aktus
+python3 scripts/likumi.py akts 316109                               # 2. pase, saturs, sakarību skaits
+python3 scripts/likumi.py teksts 316109#n4                          # 3. izlasi normu (ar lokatoriem)
+python3 scripts/likumi.py atsauce 316109#p56/56.3                   # 4. gatava atsauce + saite
 ```
 
 | Komanda | Ko dara |
@@ -143,5 +143,5 @@ vienibu_grozijumi(vienibas_id, likumi_id, groz_likumi_id, groz_datums, stajas_sp
 Piemērs: spēkā esošo likumu skaits pa gadiem
 
 ```bash
-python3 skripti/likumi.py sql "SELECT substr(pienemts,1,4) g, COUNT(*) FROM akti WHERE veids='likums' AND statuss='spēkā esošs' GROUP BY 1 ORDER BY 1 DESC" --limits 10
+python3 scripts/likumi.py sql "SELECT substr(pienemts,1,4) g, COUNT(*) FROM akti WHERE veids='likums' AND statuss='spēkā esošs' GROUP BY 1 ORDER BY 1 DESC" --limits 10
 ```

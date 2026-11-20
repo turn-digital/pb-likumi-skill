@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Rīks aģentiem: Latvijas tiesību aktu meklēšana, lasīšana, sakarības un korektas atsauces ar likumi.lv saitēm.
 
-Izvade ir JSON. Datubāzi atver tikai lasīšanai. Ārēju atkarību nav (python3 skripti/likumi.py ...).
+Izvade ir JSON. Datubāzi atver tikai lasīšanai. Ārēju atkarību nav (python3 scripts/likumi.py ...).
 
   likumi.py meklet "piekļūstamība tīmekļvietne"        akti pēc teksta un nosaukuma (noklusēti: spēkā esoši pamatakti)
   likumi.py meklet "Kultūras ministrija" --veids likums
@@ -35,12 +35,12 @@ SAKNE = Path(__file__).resolve().parent.parent
 
 
 def _db_cels() -> Path:
-    """1) LIKUMI_DB; 2) prasmes pašas dati/likumi.db (ielādēta publiskā DB);
+    """1) LIKUMI_DB; 2) prasmes pašas data/likumi.db (ielādēta publiskā DB);
     3) ja prasme ir apakšmodulis datu izgūšanas repozitorijā: tā darba DB."""
     if os.environ.get("LIKUMI_DB"):
         return Path(os.environ["LIKUMI_DB"])
-    sava = SAKNE / "dati" / "likumi.db"
-    izgusanas = SAKNE.parent / "dati" / "darba" / "likumi.db"
+    sava = SAKNE / "data" / "likumi.db"
+    izgusanas = SAKNE.parent / "data" / "work" / "likumi.db"
     return izgusanas if (not sava.exists() and izgusanas.exists()) else sava
 
 
