@@ -5,7 +5,7 @@ description: Latvijas tiesību aktu (likumi.lv, ~126 000 akti) lokāla meklēša
 
 # likumi.lv: Latvijas tiesību aktu meklēšana un atsauces
 
-Šajā mapē ir visi likumi.lv publicētie tiesību akti parsētā veidā (`data/likumi.db`, SQLite ar pilnteksta indeksu)
+Šajā mapē ir visi likumi.lv publicētie tiesību akti parsētā veidā (`data/likumi-lv.db`, SQLite ar pilnteksta indeksu)
 un rīks `scripts/likumi.py`. Rīks tikai lasa, izvade ir JSON, vajadzīgs tikai Python 3.9+ (bez papildu pakotnēm,
 bez interneta).
 

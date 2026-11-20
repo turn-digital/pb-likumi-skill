@@ -151,7 +151,7 @@ if __name__ == "__main__":
     import sys
     from pathlib import Path
     import os
-    c = sqlite3.connect(os.environ.get("LIKUMI_DB") or Path(__file__).resolve().parent.parent / "data" / "likumi.db")
+    c = sqlite3.connect(os.environ.get("LIKUMI_DB") or Path(__file__).resolve().parent.parent / "data" / "likumi-lv.db")
     r = Atrisinatajs(c)
     for t in sys.argv[1:] or ["Izdoti saskaņā ar Ministru kabineta iekārtas likuma 15.panta otro daļu",
                               'Grozījumi likumā "Par valsts un pašvaldību mantas atsavināšanu"',
