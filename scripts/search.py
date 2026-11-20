@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 """Rīks aģentiem: Latvijas tiesību aktu meklēšana, lasīšana, sakarības un korektas atsauces ar likumi.lv saitēm.
 
-Izvade ir JSON. Datubāzi atver tikai lasīšanai. Ārēju atkarību nav (python3 scripts/likumi.py ...).
+Izvade ir JSON. Datubāzi atver tikai lasīšanai. Ārēju atkarību nav (python3 scripts/search.py ...).
 
-  likumi.py meklet "piekļūstamība tīmekļvietne"        akti pēc teksta un nosaukuma (noklusēti: spēkā esoši pamatakti)
-  likumi.py meklet "Kultūras ministrija" --veids likums
-  likumi.py konteksts "darba devēja pienākums uzteikums"  RAG: atbilstošākās normas ar tekstu un atsauci
-  likumi.py akts 5138                                    pase, saturs (nodaļas, panti), sakarību skaits
-  likumi.py teksts 5138#p2                               vienības teksts ar apakšvienībām un lokatoriem
-  likumi.py atsauce 5138#p2/4/1 316109#p56/56.3          gatava atsauce + https://likumi.lv/ta/id/... saite
-  likumi.py saistitie 63545 --veids izdoti               groza / grozīts ar / atceļ / atcelts ar / pamats / izdoti
-  likumi.py atsauces 63545#p16                           kuri akti tekstā atsaucas uz šo pantu (vai --izejosas)
-  likumi.py atrisinat "saskaņā ar Valsts pārvaldes iekārtas likuma 16. panta pirmo daļu"
-  likumi.py sql "SELECT veids, COUNT(*) FROM akti GROUP BY 1"      tikai lasīšana
-  likumi.py statuss                                      datu apjoms un svaigums
+  search.py meklet "piekļūstamība tīmekļvietne"        akti pēc teksta un nosaukuma (noklusēti: spēkā esoši pamatakti)
+  search.py meklet "Kultūras ministrija" --veids likums
+  search.py konteksts "darba devēja pienākums uzteikums"  RAG: atbilstošākās normas ar tekstu un atsauci
+  search.py akts 5138                                    pase, saturs (nodaļas, panti), sakarību skaits
+  search.py teksts 5138#p2                               vienības teksts ar apakšvienībām un lokatoriem
+  search.py atsauce 5138#p2/4/1 316109#p56/56.3          gatava atsauce + https://likumi.lv/ta/id/... saite
+  search.py saistitie 63545 --veids izdoti               groza / grozīts ar / atceļ / atcelts ar / pamats / izdoti
+  search.py atsauces 63545#p16                           kuri akti tekstā atsaucas uz šo pantu (vai --izejosas)
+  search.py atrisinat "saskaņā ar Valsts pārvaldes iekārtas likuma 16. panta pirmo daļu"
+  search.py sql "SELECT veids, COUNT(*) FROM akti GROUP BY 1"      tikai lasīšana
+  search.py statuss                                      datu apjoms un svaigums
 
 Lokatoru formāts un atsauču noteikumi: sk. SKILL.md.
 """
