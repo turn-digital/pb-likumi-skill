@@ -45,6 +45,7 @@ def _db_cels() -> Path:
 
 
 DB = _db_cels()
+ATBALSTITA_SHEMA = 1    # augstākā publiskās DB schema_version, ko šis rīks saprot
 GROZ_SQL = "(a.nosaukums LIKE 'Grozījum%' OR a.nosaukums LIKE 'Par grozījum%')"
 # konteksts: akta veida svars sakārtošanā un palīgvārdi, ko atmet no jautājuma
 SVARS = {"likums": 1.3, "noteikumi": 1.15, "saistošie noteikumi": 0.9, "instrukcija": 1.0, "rīkojums": 0.7, "lēmums": 0.7}
@@ -67,6 +68,13 @@ def savienot() -> sqlite3.Connection:
     if not DB.exists():
         sys.exit(f"nav datubāzes {DB} (norādi LIKUMI_DB=/ceļš/likumi.db)")
     c = sqlite3.connect(f"file:{DB}?mode=ro", uri=True, timeout=30)
+    try:    # publiskajā DB ir tabula meta; izgūšanas repozitorija darba DB tās nav
+        v = c.execute("SELECT vertiba FROM meta WHERE atslega='schema_version'").fetchone()
+    except sqlite3.OperationalError:
+        v = None
+    if v and int(v[0]) > ATBALSTITA_SHEMA:
+        sys.exit(f"datubāzes shēmas versija {v[0]} ir jaunāka par šīs prasmes atbalstīto ({ATBALSTITA_SHEMA}): "
+                 "atjaunini prasmi (git pull)")
     c.row_factory = sqlite3.Row
     return c
 
