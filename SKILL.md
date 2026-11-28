@@ -7,7 +7,8 @@ description: Latvijas tiesību aktu (likumi.lv, ~126 000 akti) lokāla meklēša
 
 Šajā mapē ir visi likumi.lv publicētie tiesību akti parsētā veidā (`data/pb-likumi.db`, SQLite ar pilnteksta indeksu)
 un rīks `scripts/search.py`. Rīks tikai lasa, izvade ir JSON, vajadzīgs tikai Python 3.9+ (bez papildu pakotnēm,
-bez interneta).
+bez interneta). Izņēmums ir meklēšana pēc nozīmes (`--rezims nozime` un `hibrids`): tai vajag papildu pakotnes un
+modeli, sk. "Meklēšanas stratēģija".
 
 Visas komandas palaid no šīs mapes (tās, kurā atrodas šis fails):
 
@@ -32,8 +33,52 @@ Atgriež atbilstošākos pantus un punktus ar pilnu tekstu, gatavu atsauci (`ats
 - `--limits 15`, `--uz-aktu 5`, `--garums 3000`: vairāk fragmentu, vairāk no viena akta, garāki fragmenti;
 - `--statuss visi`: arī spēku zaudējušie akti; `--grozijumi`: arī grozījumu akti.
 
-Rezultāti sakārtoti pēc vārdu atbilstības, nevis pēc juridiskā spēka. Izlasi tekstu un pats izvērtē, vai norma
+Rezultāti sakārtoti pēc atbilstības jautājumam, nevis pēc juridiskā spēka. Izlasi tekstu un pats izvērtē, vai norma
 attiecas uz jautājumu.
+
+## Meklēšanas stratēģija: pēc vārdiem vai pēc nozīmes
+
+`konteksts` meklē trijos režīmos. Izvēlies pēc tā, kāds ir jautājums, nevis vienmēr vienu.
+
+| Režīms | Kā meklē | Ko padot |
+|---|---|---|
+| `--rezims vardi` (noklusējums) | vārdu sakritība (BM25) visos aktos | atslēgvārdus, likuma terminus |
+| `--rezims nozime` | tuvākās normas pēc nozīmes (vektori) | jautājumu pilnā teikumā, kā to uzdeva lietotājs |
+| `--rezims hibrids` | abi kopā, rezultāti apvienoti | jautājumu pilnā teikumā |
+
+**Sāc ar `hibrids`**, ja lietotāja jautājums ir kāds no šiem:
+
+- sadzīves valodā, bez likuma terminiem ("vai mani var atlaist slimības laikā", "cik liela alga ir premjeram");
+- situācijas apraksts vai garš jautājums ar vairākiem nosacījumiem;
+- ar pārrakstīšanās kļūdām vai bez garumzīmēm;
+- tāds, kur tu nezini, kā likums šo lietu sauc.
+
+**Lieto `vardi`** (un `meklet`), ja:
+
+- zini precīzo terminu, akta nosaukumu, panta numuru vai kodu ("pārbaudes laiks ierēdnim", "EKK 2232",
+  "potēšanas žurnāls"): precīzam, retam vārdam vārdu meklēšana ir drošāka par nozīmi;
+- jānoskaidro, **vai kaut kas vispār ir minēts** ("vai kādā likumā ir minētas audiogrāmatas"). To, ka normas nav,
+  drīkst secināt tikai no vārdu meklēšanas: meklēšana pēc nozīmes vienmēr atgriež tuvāko, arī ja atbilstošas nav;
+- jāmeklē aktos, ko vektori neaptver: rīkojumi, lēmumi, pašvaldību saistošie noteikumi, grozījumu akti, spēku
+  zaudējuši akti, pielikumi, starptautisko līgumu teksti. Vektori ir tikai spēkā esošiem likumiem un Ministru
+  kabineta noteikumiem;
+- meklē vienā aktā (`--akts ID`) pēc konkrēta vārda.
+
+**Lieto `nozime`** vienu pašu reti: kad `hibrids` rezultātu augšgalā ir normas, kas sakrīt tikai pēc biežiem vārdiem.
+
+Ieteicamā secība lietotāja jautājumam:
+
+1. `konteksts "<jautājums, kā uzdots>" --rezims hibrids` – atrod jomu un likuma terminus.
+2. `konteksts "<likuma termini no 1. soļa>"` (pēc vārdiem), ja vajag, ar `--akts ID` vai `--veids` – atrod pārējās
+   normas par to pašu.
+3. `teksts LOK` – izlasi normas pilnā apjomā, pirms uz tām atsaucies.
+
+Ja izvadē ir lauks `bridinajums` ("meklēšana pēc nozīmes nav pieejama"), rezultāts ir tikai pēc vārdiem: turpini ar
+atslēgvārdiem un sinonīmiem. Vai datubāzē ir vektori, rāda `statuss` (lauks `vektori`).
+
+Meklēšanai pēc nozīmes vajag: `pip install numpy torch transformers` un modeli `BAAI/bge-m3` (~2,3 GB, pirmajā reizē
+lejupielādē no Hugging Face; citu ceļu norāda `PB_LIKUMI_MODELIS`). Videokarti nevajag. Katrs izsaukums ielādē modeli
+no jauna, tāpēc tas ir par vairākām sekundēm lēnāks nekā meklēšana pēc vārdiem.
 
 ## Pilnā darba gaita
 
@@ -46,7 +91,7 @@ python3 scripts/search.py atsauce 316109#p56/56.3                   # 4. gatava 
 
 | Komanda | Ko dara |
 |---|---|
-| `konteksts VĀRDI` | Atbilstošākās normas ar tekstu un atsauci (viens izsaukums) |
+| `konteksts VĀRDI` | Atbilstošākās normas ar tekstu un atsauci (viens izsaukums). `--rezims vardi` (noklusējums), `nozime`, `hibrids` |
 | `meklet VĀRDI` | Aktu saraksts pēc nosaukuma un teksta. Visi vārdi obligāti. `--veids`, `--izdevejs`, `--tema`, `--nosaukuma` (tikai nosaukumos), `--statuss visi`, `--grozijumi`, `--limits` |
 | `akts ID` | Pase, redakciju datumi, saturs (nodaļas, panti), sakarību skaits |
 | `teksts LOK` | Akta vai vienības teksts ar apakšvienībām. Garam tekstam turpinājums ar `--no LOK`; `--labojumi` rāda grozījumu piezīmes |
@@ -120,7 +165,9 @@ Tēmai: `konteksts` ar vairākiem atslēgvārdu variantiem, tad katram būtiskaj
   pārējās ~85–95%; atcelto aktu saraksts (`atcel`) ir nepilnīgs.
 - **Ienākošās atsauces** (`atsauces`) ir tikai tās, kas likumi.lv tekstā ir saites.
 - **Tēmas** (`--tema`) ir tikai ~12% aktu; tēmai drošāk meklēt pēc vārdiem.
-- Meklēšana ir pēc vārdiem (BM25), nevis pēc nozīmes: izmēģini sinonīmus un likuma terminus.
+- Meklēšana pēc vārdiem (BM25) sinonīmus nezina: izmēģini sinonīmus un likuma terminus vai lieto `--rezims hibrids`.
+- Meklēšana pēc nozīmes aptver tikai spēkā esošus likumus un Ministru kabineta noteikumus (bez pielikumiem un
+  starptautisko līgumu tekstiem) un nepasaka, ka atbilstošas normas nav.
 - Datos nav ES regulu un direktīvu, tiesu nolēmumu (izņemot Satversmes tiesas) un aktu, kas nav publicēti likumi.lv.
 
 ## Datubāzes shēma (komandai `sql`)
@@ -136,6 +183,9 @@ attiecibas(no_id, kods, uz_id, noteikums)            kods: 468 grozīts ar | rev
 atsauces(likumi_id, no_vienibas, uz_likumi_id, uz_enkurs, veids, teksts)    saites aktu tekstā
 redakcijas(likumi_id, no, lidz, tips)       redakciju datumi (bez teksta)
 vienibu_grozijumi(vienibas_id, likumi_id, groz_likumi_id, groz_datums, stajas_speka, darbiba)   kurš akts kuru vienību grozījis
+fragmenti(id, likumi_id, lokators, nr, no_seciba, lidz_seciba)   vektorizētie fragmenti: norma un vienību diapazons
+vektoru_bloki(nr, skaits, ids, dati)        fragmentu vektori (int8); lieto tikai konteksts --rezims nozime | hibrids
+meta(atslega, vertiba)                      schema_version, dati_uz, embedding_model, ...
 ```
 
 `vienibas.id` nav stabils starp datu versijām: ārpus viena izsaukuma lieto lokatoru.

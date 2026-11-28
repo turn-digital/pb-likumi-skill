@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Rīks aģentiem: Latvijas tiesību aktu meklēšana, lasīšana, sakarības un korektas atsauces ar likumi.lv saitēm.
 
-Izvade ir JSON. Datubāzi atver tikai lasīšanai. Ārēju atkarību nav (python3 scripts/search.py ...).
+Izvade ir JSON. Datubāzi atver tikai lasīšanai. Ārēju atkarību nav (python3 scripts/search.py ...), izņemot
+meklēšanu pēc nozīmes (konteksts --rezims nozime | hibrids): tai vajag numpy, torch, transformers un modeli bge-m3.
 
   search.py meklet "piekļūstamība tīmekļvietne"        akti pēc teksta un nosaukuma (noklusēti: spēkā esoši pamatakti)
   search.py meklet "Kultūras ministrija" --veids likums
   search.py konteksts "darba devēja pienākums uzteikums"  RAG: atbilstošākās normas ar tekstu un atsauci
+  search.py konteksts "vai mani var atlaist slimības laikā" --rezims hibrids   vārdi + nozīme (vektori)
   search.py akts 5138                                    pase, saturs (nodaļas, panti), sakarību skaits
   search.py teksts 5138#p2                               vienības teksts ar apakšvienībām un lokatoriem
   search.py atsauce 5138#p2/4/1 316109#p56/56.3          gatava atsauce + https://likumi.lv/ta/id/... saite
@@ -204,6 +206,68 @@ def cmd_meklet(c, a):
             "akti": out})
 
 
+# ------------------------------------------------------------------ vektori (meklēšana pēc nozīmes)
+MODELIS = "bge-m3"                       # jāsakrīt ar datubāzes meta.embedding_model (publicētājs: common/versions.py)
+MODELIS_HF = "BAAI/bge-m3"               # cits ceļš vai nosaukums: vides mainīgais PB_LIKUMI_MODELIS
+VEKT_KANDIDATI = 300                     # cik tuvākos fragmentus ņem pirms filtriem un apvienošanas
+RRF_K = 60                               # hibrīds: vērtējums = summa 1 / (RRF_K + vieta sarakstā)
+
+
+class VektoriNav(Exception):
+    pass
+
+
+def vektoru_meta(c) -> dict | None:
+    """Datubāzes vektoru apraksts vai None, ja šajā datubāzē vektoru nav."""
+    try:
+        m = dict(c.execute("SELECT atslega, vertiba FROM meta").fetchall())
+        c.execute("SELECT 1 FROM vektoru_bloki LIMIT 1")
+    except sqlite3.OperationalError:
+        return None
+    return m if m.get("embedding_model") else None
+
+
+def vaicajuma_vektors(q: str):
+    try:
+        import numpy as np
+        import torch
+        from transformers import AutoModel, AutoTokenizer
+        from transformers.utils import logging as tlog
+        tlog.set_verbosity_error()
+        tlog.disable_progress_bar()
+    except ImportError as e:
+        raise VektoriNav(f"trūkst pakotnes ({e.name}); uzstādi: pip install numpy torch transformers")
+    nos = os.environ.get("PB_LIKUMI_MODELIS") or MODELIS_HF
+    try:
+        tok = AutoTokenizer.from_pretrained(nos)
+        m = AutoModel.from_pretrained(nos).eval()
+    except Exception as e:  # nav modeļa un nav interneta, bojāta kešatmiņa u.tml.
+        raise VektoriNav(f"modeli {nos} nevar ielādēt: {str(e)[:200]}")
+    with torch.inference_mode():
+        b = tok([q], truncation=True, max_length=512, return_tensors="pt")
+        v = torch.nn.functional.normalize(m(**b).last_hidden_state[:, 0], dim=-1)[0]   # CLS, kā publicētājs
+    return v.numpy().astype(np.float32)
+
+
+def vektoru_tuvakie(c, q: str, n: int = VEKT_KANDIDATI) -> list[tuple[int, float]]:
+    """Jautājumam pēc nozīmes tuvākie fragmenti: [(fragmenti.id, kosinusa līdzība)], labākie pirmie."""
+    meta = vektoru_meta(c)
+    if meta is None:
+        raise VektoriNav("šajā datubāzē vektoru nav (meta.embedding_model ir tukšs)")
+    if not meta["embedding_model"].startswith(MODELIS):
+        raise VektoriNav(f"datubāzes vektori ir no modeļa {meta['embedding_model']}, rīks prot {MODELIS}: atjaunini prasmi")
+    qv = vaicajuma_vektors(q)
+    import numpy as np
+    ids, lidz = [], []
+    for bid, dati in c.execute("SELECT ids, dati FROM vektoru_bloki ORDER BY nr"):
+        m = np.frombuffer(dati, dtype=np.int8).reshape(-1, len(qv)).astype(np.float32)
+        lidz.append((m @ qv) / np.maximum(np.linalg.norm(m, axis=1), 1e-9))
+        ids.append(np.frombuffer(bid, dtype="<i4"))
+    ids, lidz = np.concatenate(ids), np.concatenate(lidz)
+    top = np.argsort(-lidz)[:n]
+    return [(int(ids[i]), float(lidz[i])) for i in top]
+
+
 # ------------------------------------------------------------------ konteksts (RAG)
 def cmd_konteksts(c, a):
     """Jautājums -> atbilstošākās normas ar pilnu tekstu un gatavu atsauci (viens izsaukums RAG vajadzībām)."""
@@ -212,6 +276,8 @@ def cmd_konteksts(c, a):
     if a.akts:
         fsql += " AND a.likumi_id = ?"
         fpar.append(a.akts)
+    if a.rezims == "hibrids":   # hibrīdam padod teikumu: iekavas un pēdiņas tajā nav FTS sintakse
+        q = " ".join(re.sub(r'["*()^:]', " ", q).split())
     brivs0 = not re.search(r'["*()]|\b(OR|AND|NOT|NEAR)\b', q)
     if brivs0:  # dabiskas valodas jautājumam atmet palīgvārdus
         vardi = [w for w in re.findall(r"[\w\-]+", q) if w.lower() not in PALIGVARDI]
@@ -222,23 +288,34 @@ def cmd_konteksts(c, a):
     def vaicat(fts):
         try:
             return c.execute(
-                f"""SELECT v.likumi_id, v.id, bm25(vienibas_fts, 3.0, 1.0) AS r
+                f"""SELECT v.likumi_id, v.id, v.seciba, bm25(vienibas_fts, 3.0, 1.0) AS r
                     FROM vienibas_fts JOIN vienibas v ON v.id = vienibas_fts.rowid
                     JOIN akti a ON a.likumi_id = v.likumi_id
                     WHERE vienibas_fts MATCH ? {fsql} ORDER BY r LIMIT 3000""", [fts] + fpar).fetchall()
         except sqlite3.OperationalError as e:
             kluda(f"FTS vaicājuma kļūda ({fts}): {e}")
 
-    rindas, rezims = vaicat(fq), "visi vārdi"
-    if len(rindas) < a.limits and brivs and " " in fq:
-        fq2 = " OR ".join(fq.split(" "))
-        redzeti = {r["id"] for r in rindas}
-        rindas = list(rindas) + [r for r in vaicat(fq2) if r["id"] not in redzeti]
-        fq, rezims = fq2, "jebkurš no vārdiem (ar visiem vārdiem atrasts par maz)"
-    # normatīvie akti pirms rīkojumiem un lēmumiem (bm25 ir negatīvs: mazāks = labāks)
-    svars = {r[0]: SVARS.get(r[1], 0.8) for r in c.execute(
-        f"SELECT likumi_id, veids FROM akti WHERE likumi_id IN ({','.join(str(i) for i in {r['likumi_id'] for r in rindas})})")}
-    rindas = sorted(rindas, key=lambda r: r["r"] * svars.get(r["likumi_id"], 0.8))
+    rindas, rezims, vekt_piezime = [], "", None
+    if a.rezims != "nozime":
+        rindas, rezims = vaicat(fq), "visi vārdi"
+        if len(rindas) < a.limits and brivs and " " in fq:
+            fq2 = " OR ".join(fq.split(" "))
+            redzeti = {r["id"] for r in rindas}
+            rindas = list(rindas) + [r for r in vaicat(fq2) if r["id"] not in redzeti]
+            fq, rezims = fq2, "jebkurš no vārdiem (ar visiem vārdiem atrasts par maz)"
+        # normatīvie akti pirms rīkojumiem un lēmumiem (bm25 ir negatīvs: mazāks = labāks)
+        svars = {r[0]: SVARS.get(r[1], 0.8) for r in c.execute(
+            f"SELECT likumi_id, veids FROM akti WHERE likumi_id IN ({','.join(str(i) for i in {r['likumi_id'] for r in rindas})})")}
+        rindas = sorted(rindas, key=lambda r: r["r"] * svars.get(r["likumi_id"], 0.8))
+    if a.rezims != "vardi":
+        try:        # vektorizē jautājumu tādu, kāds tas uzrakstīts (ar palīgvārdiem)
+            vrindas = vektoru_rindas(c, " ".join(a.vaicajums), fsql, fpar)
+            rindas = vrindas if a.rezims == "nozime" else rrf(c, rindas, vrindas)
+            rezims = "nozīme (vektori)" if a.rezims == "nozime" else f"hibrīds: {rezims} + nozīme (vektori)"
+        except VektoriNav as e:
+            if a.rezims == "nozime":
+                kluda(f"meklēšana pēc nozīmes nav pieejama: {e}. Lieto --rezims vardi.")
+            vekt_piezime = f"meklēšana pēc nozīmes nav pieejama ({e}); rezultāts ir tikai pēc vārdiem"
     akti: dict[int, Akts] = {}
     uz_aktu: dict[int, int] = {}
     redz: set = set()
@@ -283,11 +360,50 @@ def cmd_konteksts(c, a):
         })
         if len(out) >= a.limits:
             break
-    izvade({"vaicajums": q, "fts": fq, "rezims": rezims, "paraditi": len(out),
+    izvade({"vaicajums": q, **({} if a.rezims == "nozime" else {"fts": fq}), "rezims": rezims, "paraditi": len(out),
             "dati_uz": out and atsauce(akti[next(iter(akti))], None).get("dati_uz") or None,
             "fragmenti": out,
-            "piezime": "Fragmenti sakārtoti pēc atbilstības vārdiem (BM25), nevis pēc juridiskā spēka. Pirms apgalvojuma "
-                       "pārliecinies, ka norma attiecas uz jautājumu; plašākam kontekstam: teksts LOK, akts ID."})
+            **({"bridinajums": vekt_piezime} if vekt_piezime else {}),
+            "piezime": "Fragmenti sakārtoti pēc atbilstības jautājumam, nevis pēc juridiskā spēka. Pirms apgalvojuma "
+                       "pārliecinies, ka norma attiecas uz jautājumu; plašākam kontekstam: teksts LOK, akts ID."
+                       + (" Meklēšana pēc nozīmes aptver tikai spēkā esošus likumus un Ministru kabineta noteikumus "
+                          "un vienmēr atgriež tuvāko, arī ja atbilstošas normas nav." if "nozīme" in rezims else "")})
+
+
+def vektoru_rindas(c, q: str, fsql: str, fpar: list) -> list[dict]:
+    """Tuvākie fragmenti kā rindas (likumi_id, id = fragmenta pirmā vienība, seciba), ievērojot aktu filtrus."""
+    tuv = vektoru_tuvakie(c, q)
+    fr = {r["id"]: r for r in c.execute(
+        f"""SELECT f.id, f.likumi_id, f.no_seciba FROM fragmenti f JOIN akti a ON a.likumi_id = f.likumi_id
+            WHERE f.id IN ({','.join(str(i) for i, _ in tuv)}) {fsql}""", fpar)}
+    out = []
+    for fid, lidz in tuv:
+        f = fr.get(fid)
+        v = f and c.execute("SELECT id FROM vienibas WHERE likumi_id=? AND seciba=?",
+                            (f["likumi_id"], f["no_seciba"])).fetchone()
+        if v:
+            out.append({"likumi_id": f["likumi_id"], "id": v["id"], "seciba": f["no_seciba"], "lidziba": lidz})
+    return out
+
+
+def rrf(c, vardi: list, nozime: list, n: int = 200) -> list:
+    """Divu sarakstu apvienošana (reciprocal rank fusion). Atslēga ir norma: fragmenta lokators, ja vienība ir kādā
+    fragmentā; citādi pati vienība (akti, kam fragmentu nav: rīkojumi, saistošie noteikumi u.c.)."""
+    def atslega(r):
+        f = c.execute("SELECT lokators FROM fragmenti WHERE likumi_id=? AND no_seciba<=? AND lidz_seciba>=? LIMIT 1",
+                      (r["likumi_id"], r["seciba"], r["seciba"])).fetchone()
+        return (r["likumi_id"], f["lokators"]) if f else (r["likumi_id"], r["id"])
+    punkti, pirmais = {}, {}
+    for saraksts in (vardi[:n], nozime[:n]):
+        redz = set()
+        for r in saraksts:
+            k = atslega(r)
+            if k in redz:
+                continue
+            punkti[k] = punkti.get(k, 0.0) + 1.0 / (RRF_K + len(redz))
+            redz.add(k)
+            pirmais.setdefault(k, r)
+    return [pirmais[k] for k in sorted(punkti, key=punkti.get, reverse=True)]
 
 
 # ------------------------------------------------------------------ akts
@@ -541,6 +657,9 @@ def cmd_statuss(c, a):
                 f"SELECT a.veids, COUNT(*) FROM akti a WHERE a.statuss='spēkā esošs' AND NOT {GROZ_SQL} "
                 "GROUP BY 1 ORDER BY 2 DESC LIMIT 8")},
             "attiecibas": c.execute("SELECT COUNT(*) FROM attiecibas").fetchone()[0],
+            "vektori": (lambda m: {"modelis": m["embedding_model"], "fragmenti": int(m.get("vektori") or 0),
+                                   "aptver": "spēkā esoši likumi un Ministru kabineta noteikumi"} if m else None)(
+                vektoru_meta(c)),
             "piezime": "Teksts ir akta spēkā esošā redakcija lejupielādes dienā; vēsturisko redakciju tekstu nav."})
 
 
@@ -572,6 +691,8 @@ def main():
     p.add_argument("--tema", help="likumi.lv tēmas daļa")
     p.add_argument("--uz-aktu", type=int, default=3, dest="uz_aktu", help="maksimālais fragmentu skaits no viena akta")
     p.add_argument("--garums", type=int, default=1500, help="fragmenta maksimālais garums rakstzīmēs")
+    p.add_argument("--rezims", choices=["vardi", "nozime", "hibrids"], default="vardi",
+                   help="vardi: pēc vārdiem (BM25, noklusējums); nozime: pēc nozīmes (vektori); hibrids: abi kopā")
     kopigie(p)
     p.set_defaults(f=cmd_konteksts, limits=8)
 
